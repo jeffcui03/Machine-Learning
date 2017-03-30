@@ -1,0 +1,54 @@
+#http://blog.datadive.net/selecting-good-features-part-iii-random-forests/
+
+install.packages(‘quantmod’)
+library(quantmod) #We will use the quantmod package to calculate the Bollinger Bands
+
+
+install.packages(‘randomForest’)
+library(randomForest) #The random forest package we will use
+
+
+DateTime<-as.POSIXlt(GBPUSD[,1],format="%m/%d/%y %H:%M") #format our date and time
+HLC<-GBPUSD[,3:5] #Grab the High, Low, Close
+
+HLCts<-data.frame(HLC,row.names=DateTime)
+HLCxts<-as.xts(HLCts) #Create a timeseries object
+
+Bollinger<-BBands(HLCxts,n=20,SMA,sd=2) #Calculate the bollinger bands
+
+Upper<-Bollinger$up - HLCxts$Close #Build our first 3 features
+Lower<-Bollinger$dn - HLCxts$Close
+Middle <- Bollinger$mavg - HLCxts$Close
+
+PChangepctB<-Delt(Bollinger$pctB,k=1) #We’ll use quantmod’s ‘Delt’ function to calculate the percent change
+PChangeUpper<-Delt(Upper,k=1)
+PChangeLower<-Delt(Lower,k=1)
+PChangeMiddle<-Delt(Middle,k=1)
+
+Returns<-Delt(HLCxts$Close,k=1); Class<-ifelse(Returns>0,"Up","Down") #Calculate the percent change and 
+#the resultant class we are looking to predict, either an upward or downward move in the market
+
+ClassShifted<-Class[-1] #Shift our class back one since this is what we are trying to predict
+
+Features<-data.frame(Upper, Lower, Middle, Bollinger$pctB, PChangepctB, PChangeUpper, PChangeLower, PChangeMiddle) 
+#Combine all of our features
+
+FeaturesShifted<-Features[-5257,] #Match up with our class
+
+ModelData<-data.frame(FeaturesShifted,ClassShifted) #Combine our two data sets
+
+FinalModelData<-ModelData[-c(1:20),] #Remove the instances where the indicators are being calculated
+
+colnames(FinalModelData)<-c("pctB","LowerDiff","UpperDiff","MiddleDiff","PChangepctB","PChangeUpper","PChangeLower","PChangeMiddle","Class") #Name the columns
+
+set.seed(1) #Set the initial random seed to help get reproducible results
+
+FeatureNumber<-tuneRF(FinalModelData[,-9],FinalModelData[,9],ntreeTry=100, stepFactor=1.5,improve=0.01, trace=TRUE, plot=TRUE, dobest=FALSE) 
+#We are evaluating the features (columns 1 through 9) using the class (column 9) to find the optimal number of features per tree
+
+#mentry=2, python max_features=2
+RandomForest<-randomForest(Class~.,data=FinalModelData,mtry=2,ntree=2000,keep.forest=TRUE,importance=TRUE) #We are using all of the features to predict the class, with 2 features per tree, a forest of 2,000 trees, keeping the final forest and we want to measure the importance of each feature. Note: this may take a couple minutes
+
+varImpPlot(RandomForest)
+
+#We can immediately see that the percent change in the %B value was the most important factor and, in general, looking at the percent change in the values were better than looking at only the distance between the price and the upper, lower, and middle lines.
