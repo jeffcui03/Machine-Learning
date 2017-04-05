@@ -155,6 +155,92 @@ masterFrame['Return'].dropna().cumsum().plot()
 
 
 
+import pandas as pd
+import talib
+%matplotlib inline
+
+from matplotlib import pyplot as plt
+
+#period = 20
+#nbdevup = 2.0
+#nbdevdn = 2.0
+
+def getBB(bbDf, period=20, nbdevup=2.0, nbdevdn=2.0):
+    closes = bbDf['Close'].values
+    upper, middle, lower = talib.BBANDS(closes, timeperiod=20, matype=0)
+    bbDf['BB_Upper'] = upper
+    bbDf['BB_Middle'] = middle
+    bbDf['BB_Lower'] = lower
+    bbDf.plot(x='Date', y=['Close', 'BB_Upper', 'BB_Middle', 'BB_Lower'])
+    plt.show()
+    
+    return bbDf
+    
+
+    
+#n is also the shift upward period in pd.series
+
+def generateModelDf(bbDf, n=1):
+    bbDf['BB_PctB'] = 100 * (bbDf['Close'] - bbDf['BB_Lower'])/(bbDf['BB_Upper'] - bbDf['BB_Lower'])
+    bbDf['pc_Upper'] = bbDf['BB_Upper'].pct_change(n)
+    bbDf['pc_Middle'] = bbDf['BB_Middle'].pct_change(n)
+    bbDf['pc_Lower'] = bbDf['BB_Lower'].pct_change(n)
+    bbDf['pc_PctB'] = bbDf['BB_PctB'].pct_change(n)
+    bbDf['Return'] = bbDf['Close'].pct_change(n)
+    bbDf['Class'] = bbDf['Return'].map(lambda x: 'Up' if x>=0 else 'Down')
+    bbDf['ClassShifted'] = bbDf['Class'].shift(n*(-1))
+    cutSz = 20+ (n-1)
+    modelDf = bbDf.loc[cutSz:][['BB_PctB', 'BB_Upper', 'BB_Middle', 'BB_Lower', 'pc_Upper', 'pc_Middle', 'pc_Lower', 'pc_PctB', 'Return', 'ClassShifted']] .copy()
+    #modelDf = bbDf[['BB_PctB', 'BB_Upper', 'BB_Middle', 'BB_Lower', 'pc_Upper', 'pc_Middle', 'pc_Lower', 'pc_PctB', 'ClassShifted']] .copy()
+    modelDf['ClassShifted'] = modelDf['ClassShifted'].map(lambda x: 1 if x == 'Up' else -1)
+        
+    return modelDf    
+
+
+from sklearn.ensemble import RandomForestRegressor
+import random
+
+random.seed(100)
+
+
+#Get RF "mean decrase impurity"
+def getRfMeanDecreaseImpurity(rf, modelDf):
+    X = modelDf[['BB_PctB', 'BB_Upper', 'BB_Middle', 'BB_Lower', 'pc_Upper', 'pc_Middle', 'pc_Lower', 'pc_PctB']].values
+    Y = modelDf['ClassShifted'].values
+    featureNames = ['BB_PctB', 'BB_Upper', 'BB_Middle', 'BB_Lower', 'pc_Upper', 'pc_Middle', 'pc_Lower', 'pc_PctB']
+    
+    #import numpy as np
+    #print(np.isnan(X).any())
+    #print(np.isinf(Y).any()
+
+    #rf = RandomForestRegressor()
+    rf.fit(X, Y)
+    
+    print("Features sorted by their score:")
+    print(sorted(zip(rf.feature_importances_, featureNames), reverse=True))
+    
+    return X, Y
+    
+    
+df = pd.read_csv('IF_10.csv')
+df['Date'] = pd.to_datetime((df['Date'] + ' ' + df['Time']), format='%Y/%m/%d %H:%M:%S')
+del df['Time']
+
+bbDf = df[['Date', 'High', 'Low', 'Close']].copy()
+bbDf = getBB(bbDf)
+   
+bbDf.head(30)
+
+modelDf = generateModelDf(bbDf)
+
+modelDf.head(30)
+
+rf = RandomForestRegressor()
+X, Y = getRfMeanDecreaseImpurity(rf, modelDf)
+
+    
+
+    
 
 
 
