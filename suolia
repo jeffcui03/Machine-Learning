@@ -1,3 +1,214 @@
+Inputs: TargFr (5),    { fraction of ATR for profit target }
+         FloorFr(3.5),    { fraction of ATR for floor of trailing stop }
+         TrailPr(10),     { % of open profit to lock w/trailing stop }
+         StopFr (4.5),    { fraction of ATR for money management stop }
+         TmEnt  (40),     { number of minutes from open to enter }
+         TmExt  (10),     { minutes from last entry time to exit }
+         NAve   (675),    { lenght of moving average for entry filter }
+         w1     (1),      { weights }
+         w2     (1),
+         w3     (0),
+         w4     (-1),
+         w5     (1),
+         w6     (0);
+
+ Var:    ATR     (0),     { average true range }
+         AMA     (0),     { Kauffman adaptive moving average }
+         DayH    (0),     { high of previous day }
+         DayL    (0),     { low of previous day }
+         DayC    (0),     { close of previous day }
+         DayMode (0),     { mode price of previous day }
+         I1r     (0),     { raw inputs }
+         I2r     (0),    
+         I3r     (0),
+         I4r     (0),
+         I5r     (0),
+         I6r     (0),
+         I1      (0),     { inputs }
+         I2      (0),    
+         I3      (0),
+         I4      (0),
+         I5      (0),
+         I6      (0),
+         I1Max   (0),     { max inputs }
+         I2Max   (0),    
+         I3Max   (0),
+         I4Max   (0),
+         I5Max   (0),
+         I6Max   (0),
+         I1Min   (99999999),    { min inputs }
+         I2Min   (99999999),    
+         I3Min   (99999999),
+         I4Min   (99999999),
+         I5Min   (99999999),
+         I6Min   (99999999),
+         NNOut   (0),     { function output }
+         EntH    (0),     { long entry price }
+         EntL    (0),     { short entry price }
+         LStop   (0),     { Stop price for long trades }
+         SStop   (0),     { Stop price of short trades }
+         IStopL  (0),     { initial stop, long trades }
+         IStopS  (0),     { initial stop, short trades }
+         NewLStop(0),     { Updated stop for long trades }
+         NewSStop(0),     { Updated stop for short trades }
+         DolStop (0),     { Dollar value of stop }
+         EntTime (0),     { Latest time to enter trade }
+         ExtTime (0),     { Time to exit trade at market }
+         TargPts (0),     { Size of profit target in point }
+         XPts1   (0),     { Size of money manag. stop in points }
+         LongNext(false), { logical flag for entering long next bar }
+         ShortNext(false),{ logical flag for entering short next bar }
+         LTrailOn(false), { logical flag for trailing stop }
+         STrailOn(false); { logical flag for trailing stop }
+
+ LongNext = false;
+ ShortNext = false;
+
+ { Calculate times relative to regular session open }
+ EntTime = CalcTime(SessionStartTime(0, 1), TmEnt);  
+ ExtTime = CalcTime( EntTime, TmExt );
+
+ { Define inputs, scaled }
+ ATR = Average(TrueRange, 20);
+ AMA = AdaptiveMovAvg(C, 10, 2, 30);
+ Value1 = PriceMode(DayH, DayL, DayC, DayMode);  { Proprietary "mode" function }
+
+ I1r = volume - average(volume, 20);
+ I2r = (C - C[2])/ATR;
+ I3r = (C - AMA)/ATR;
+ I4r = (AMA - Average(C, 81))/ATR;
+ I5r = (C - DayMode)/ATR;
+ I6r = (TrueRange - ATR)/ATR;
+
+ { track min and max input values }
+ I1Max = MaxList(I1r, I1Max);
+ I2Max = MaxList(I2r, I2Max);
+ I3Max = MaxList(I3r, I3Max);
+ I4Max = MaxList(I4r, I4Max);
+ I5Max = MaxList(I5r, I5Max);
+ I6Max = MaxList(I6r, I6Max);
+ I1Min = MinList(I1r, I1Min);
+ I2Min = MinList(I2r, I2Min);
+ I3Min = MinList(I3r, I3Min);
+ I4Min = MinList(I4r, I4Min);
+ I5Min = MinList(I5r, I5Min);
+ I6Min = MinList(I6r, I6Min);
+
+ if AbsValue(I1Max - I1Min) > 0 then
+    I1 = (2 * I1r - (I1Max + I1Min))/(I1Max - I1Min)
+ else 
+    I1 = I1r;
+ if AbsValue(I2Max - I2Min) > 0 then
+    I2 = (2 * I2r - (I2Max + I2Min))/(I2Max - I2Min)
+ else
+    I2 = I2r;
+ if AbsValue(I3Max - I3Min) > 0 then
+    I3 = (2 * I3r - (I3Max + I3Min))/(I3Max - I3Min)
+ else
+    I3 = I3r;
+ if AbsValue(I4Max - I4Min) > 0 then
+    I4 = (2 * I4r - (I4Max + I4Min))/(I4Max - I4Min)
+ else
+    I4 = I4r;
+ if AbsValue(I5Max - I5Min) > 0 then
+    I5 = (2 * I5r - (I5Max + I5Min))/(I5Max - I5Min)
+ else
+    I5 = I5r;
+ if AbsValue(I6Max - I6Min) > 0 then
+    I6 = (2 * I6r - (I6Max + I6Min))/(I6Max - I6Min)
+ else
+    I6 = I6r;
+
+ { Define "neural net" function }
+ NNOut = tanh(w1*I1 + w2*I2 + w3*I3 + w4*I4 + w5*I5 + w6*I6); 
+ 
+ { Place trades based on function output }
+ If MarketPosition <> 1 and time < EntTime and EntriesToday(Date) < 1 and 
+    C > average(C, NAve) and NNOut >= 0.5 then Begin
+       EntH = highest(H, 2) + 1 point;
+       Buy next bar at EntH stop;
+       TargPts = MaxList(1, TargFr * ATR);
+       XPts1 = StopFr * ATR;
+       LStop = EntH - XPts1;
+       DolStop = XPts1 * BigPointValue;
+       IStopL = LStop;
+       LongNext = true;
+       LTrailOn = False;
+ End;
+
+ If MarketPosition <> -1 and time < EntTime and EntriesToday(Date) < 1 and 
+    C < average(C, NAve) and NNOut <= -0.5 then Begin
+       EntL = lowest(L, 2);
+       Sell short next bar at EntL stop;
+       TargPts = MaxList(1, TargFr * ATR);
+       XPts1 = StopFr * ATR;
+       SStop = EntL + XPts1;
+       DolStop = XPts1 * BigPointValue;
+       IStopS = SStop;
+       ShortNext = true;
+       STrailOn = False;
+ End;
+
+ { Recalculate stop and target for long trade based on current ATR }
+ If MarketPosition = 1 then Begin
+    Sell("Targ-L1") next bar at entryprice + TargPts limit;
+    if C - EntryPrice > FloorFr * ATR then
+       LTrailOn = True;
+    if LTrailOn then
+       NewLStop = EntryPrice + TrailPr/100. * (C - EntryPrice)
+    else
+       NewLStop = LStop;
+    LStop = MaxList(LStop, NewLStop);
+    Sell("Stop-L2") next bar at LStop stop;
+    if time >= ExtTime then
+       Sell("Time-L3") next bar at market;
+ End;
+
+ { Recalculate stop and target for short trade based on current ATR }
+ If MarketPosition = -1 then Begin
+    Buy to cover("Targ-S1") next bar at entryprice - TargPts limit;
+    if EntryPrice - C > FloorFr * ATR then
+       STrailOn = True;
+    if STrailOn then
+       NewSStop = EntryPrice - TrailPr/100. * (EntryPrice - C)
+    else
+       NewSStop = SStop;
+    SStop = MinList(SStop, NewSStop);
+    Buy to cover("Stop-S2") next bar at SStop stop;
+    if time >= ExtTime then
+       Buy to cover("Time-S3") next bar at market;
+ End;
+
+ SetExitOnClose;
+
+ If (date >= CalcDate(LastCalcDate, -5)) then Begin
+    Print(NewLine, "Neural DT 1 (", GetSymbolName, "). Date: ", DateString2(Date), " Time: ", time:0:0);
+    If MarketPosition = 0 then
+       Print("  NN Filter = ", NNOut);
+    If LongNext then Begin
+       Print("  Buy next bar at ", EntH, " stop.");
+       Print("  Place sell stop at ", LStop);
+       Print("  Stop Size ($): ", DolStop:0:2);
+    End;
+    If ShortNext then Begin
+       Print("  Sell short next bar at ", EntL, " stop.");
+       Print("  Place buy stop at ", SStop);
+       Print("  Stop Size ($): ", DolStop:0:2);
+    End;
+    If MarketPosition = 1 then Begin
+       Print("  Sell target for long trade: ", entryprice + TargPts);
+       Print("  Sell stop for long trade: ", LStop);
+       Print("  When time reaches ", ExtTime:0:0, " exit at market.");
+    End;
+    If MarketPosition = -1 then Begin
+       Print("  Buy target for short trade: ", entryprice - TargPts);
+       Print("  Buy stop for short trade: ", SStop);
+       Print("  When time reaches ", ExtTime:0:0, " exit at market.");
+    End;
+ End;
+ 	
+
+
 <Date>, <Time>, <Open>, <High>, <Low>, <Close>, <Volume>
 2014/1/2,09:45:00,11080,11090,11040,11050,111484
 2014/1/2,10:30:00,11045,11050,11015,11035,49904
