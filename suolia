@@ -209,6 +209,103 @@ Inputs: TargFr (5),    { fraction of ATR for profit target }
  	
 
 
+ Input:DayH      (NumericRef),     { high of day }
+       DayL      (NumericRef),     { low of day }
+       DayC      (NumericRef),     { close of day }
+       DayMode   (NumericRef);     { mode price of day }
+       
+ Var:  BarL      (0),     { low of bar }
+       BarH      (0),     { high of bar }
+       NPrices   (0),     { number of prices during day }
+       NPBar     (0),     { number of prices during bar }   
+       PrBar     (0),     { price on bar }
+       PrIndex   (0),     { index to Prices array }
+       MaxCount  (0),     { largest value of Count array }
+       iMax      (0),     { index in Count of MaxCount }
+       TickSize  (0),     { size (points) of min price move }
+       ibar      (0),     { bar counter }
+       ii        (0),     { loop counter }
+       NotDone   (true);     
+
+ Array: Prices[5000](0),    { prices for day }
+        Count[5000](0);     { number of trades at each price }
+        
+ TickSize = MinMove / PriceScale;
+
+ { On first bar, initialize price mode }
+ If BarNumber = 1 then Begin
+    DayL = Low[1];
+    DayH = High[1];
+    DayC = Close[1];
+    DayMode = Close[1];
+ End;
+
+ { On first bar of new day, do calculations on prior day's data }
+ If Date <> Date[1] then Begin
+    
+    DayC = Close[1]; { record prior day's close }
+
+    { Scan bars of prior day to find high and low }
+    ibar = 1;
+    NotDone = true;
+    BarL = Low[1];
+    BarH = High[1];
+    While NotDone Begin
+       if High[ibar] > BarH then
+          BarH = High[ibar];
+       if Low[ibar] < BarL then
+          BarL = Low[ibar];
+       if Date[ibar] <> Date[ibar + 1] then
+          NotDone = False
+       else
+          ibar = ibar + 1;
+    End;
+
+    DayH = BarH;
+    DayL = BarL;
+{	print("Date: ", date:8:0, " High: ", BarH:0:2, " Low: ", BarL:0:2); }
+
+    { Calculate # of price in prior day and fill in array of prices }
+    NPrices = (BarH - BarL)/TickSize + 1;
+    For ii = 0 to NPrices - 1 Begin
+        Prices[ii] = BarL + ii * TickSize;
+        Count[ii] = 0;       { initialize array of counts }
+    End;
+
+{	print(" Number of price levels: ", NPrices:0:0); }
+
+    { Scan bars of prior day and count trades at each price }
+    ibar = 1;
+    NotDone = true;
+    While NotDone Begin
+       NPBar = (High[ibar] - Low[ibar])/TickSize + 1;
+       For ii = 0 to NPBar - 1 Begin
+           PrBar = Low[ibar] + ii * TickSize;
+           PrIndex = (PrBar - BarL)/TickSize;
+           Count[PrIndex] = Count[PrIndex] + volume/NPBar;
+       End;
+       if Date[ibar] <> Date[ibar + 1] then
+          NotDone = False
+       else
+          ibar = ibar + 1;
+    End;
+
+    { Scan Count array for price with greatest volume }
+    MaxCount = 0;
+    For ii = 0 to NPrices - 1 Begin
+        If Count[ii] > MaxCount then Begin
+           MaxCount = Count[ii];
+           iMax = ii;
+        End;
+	End;
+	DayMode = BarL + iMax * TickSize;
+
+{	print(" Price Mode bar. MaxCount = ", MaxCount:0:0, " iMax = ", iMax:0:0, " DayMode = ", DayMode:0:2); }
+ End;
+
+ PriceMode = DayMode;
+
+
 <Date>, <Time>, <Open>, <High>, <Low>, <Close>, <Volume>
 2014/1/2,09:45:00,11080,11090,11040,11050,111484
 2014/1/2,10:30:00,11045,11050,11015,11035,49904
