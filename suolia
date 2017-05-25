@@ -1,3 +1,5 @@
+608031
+
 Inputs: TargFr (5),    { fraction of ATR for profit target }
          FloorFr(3.5),    { fraction of ATR for floor of trailing stop }
          TrailPr(10),     { % of open profit to lock w/trailing stop }
